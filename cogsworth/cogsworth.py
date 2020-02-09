@@ -12,8 +12,8 @@ import logging as loggr
 from os import environ
 from sys import exit
 
-from server import Cogsworth
-from handler import CogsworthHttpHandler
+from httpserver import Cogsworth
+from httphandler import CogsworthHttpHandler
 
 log = loggr.getLogger('cogsworth')
 log.setLevel(loggr.DEBUG)

@@ -3,6 +3,8 @@
 from http.server import HTTPServer
 from time import time
 
+from scheduler import Scheduler
+
 
 class Cogsworth(HTTPServer):
     """Cogsworth, implement HTTPServer."""
@@ -15,6 +17,7 @@ class Cogsworth(HTTPServer):
         self._requests_warning = 0
         self._requests_error = 0
         self._requests_bad = 0
+        self._scheduler = Scheduler()
 
     def status(self):
         """Create status obect according to SMRT interface.
