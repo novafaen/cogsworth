@@ -1,15 +1,19 @@
 """Cogsworth server, implements HTTPServer."""
 
 from http.server import HTTPServer
+from typing import Optional
 from time import time
+from pathlib import Path
+from os.path import dirname
 
+from configuration import load_config
 from scheduler import Scheduler
 
 
 class Cogsworth(HTTPServer):
     """Cogsworth, implement HTTPServer."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, config_path: Optional[str] = None, **kwargs):
         """Initialize Cogsworth class."""
         HTTPServer.__init__(self, *args, **kwargs)
         self._started = int(time())
@@ -17,7 +21,18 @@ class Cogsworth(HTTPServer):
         self._requests_warning = 0
         self._requests_error = 0
         self._requests_bad = 0
-        self._scheduler = Scheduler()
+
+        if config_path is None:
+            raise TypeError('Cogsworth missing 1 required keyword argument:'
+                            ' \'config_path\'')
+
+        schema_path = Path(dirname(__file__)) / 'schemas' / \
+            'configuration.cogsworth.schema.json'
+
+        config = load_config(config_path, schema_path)
+
+        self._scheduler = Scheduler(config)
+        self._scheduler.start()
 
     def status(self):
         """Create status obect according to SMRT interface.

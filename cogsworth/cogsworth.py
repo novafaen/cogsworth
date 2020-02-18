@@ -39,12 +39,18 @@ if __name__ == '__main__':
     _initialize_logging()
 
     if 'SMRT_PORT' not in environ:
-        log.error('SMRT_PORT is not configured')
+        log.error('SMRT_PORT environment variable is not configured.')
         exit(1)
     port = int(environ['SMRT_PORT'])
 
+    if 'SMRT_CONFIGURATION' not in environ:
+        log.error('SMRT_CONFIGURATION environment variable is not configured.')
+        exit(1)
+    config_path = environ['SMRT_CONFIGURATION']
+
     log.debug('Cogsworth (1.0.0) spinning up...')
-    httpd = Cogsworth(('', port), CogsworthHttpHandler)
+    httpd = Cogsworth(('', port), CogsworthHttpHandler,
+                      config_path=config_path)
     log.debug('Cogsworth initiated!')
     try:
         httpd.serve_forever()

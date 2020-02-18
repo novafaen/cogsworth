@@ -3,12 +3,12 @@
 Will schedule and handle event callbacks.
 """
 
-
-from time import localtime, strftime
+from datetime import datetime, timezone
+from time import localtime, strftime, sleep
 import logging
 from threading import Thread
-import time
 
+from pysolar.solar import get_altitude
 import schedule
 
 # supress logging from third party library
@@ -24,148 +24,87 @@ class Scheduler(Thread):
         """Create and initiate ``Stick`` application."""
         Thread.__init__(self)
 
+        self._config = config
+        self._previous_sun_angle = 360  # invalid value
+
         log.debug('scheduler initiating')
 
+        # add configured events to schedule
         for event in config['events']:
-            for event_day in event['days']:
-                day, time = event_day['day'], event_day['time']
-                self.schedule_event(event['type'], day, time,
-                                    lights=event['lights'],
-                                    switches=event['switches'])
+            name = event['name']
+            days = event['days']
+            if 'time' in event:
+                self._schedule_onetime(name, event['time'], days)
+            else:
+                start = event['start']
+                end = event['end']
+                self._schedule_spantime(name, start, end, days)
 
-        for schedule_day in config['schedule']:
-            start, end = schedule_day['start'], schedule_day['end']
-            self.add_schedule(schedule_day['type'], start, end, schedule_day['lights'])
+        # add sun rise and dawn to schedule
+        schedule.every().minute.do(self._sun_event)
 
-        log.debug('scheduler initiation done')
+    def _schedule_onetime(self, name, time, days):
+        for day in days:
+            if day == 'monday':
+                schedule.every().monday.at(time).do(self._emit_event, name)
+            elif day == 'tuesday':
+                schedule.every().tuesday.at(time).do(self._emit_event, name)
+            elif day == 'wednesday':
+                schedule.every().wednesday.at(time).do(self._emit_event, name)
+            elif day == 'thursday':
+                schedule.every().thursday.at(time).do(self._emit_event, name)
+            elif day == 'friday':
+                schedule.every().friday.at(time).do(self._emit_event, name)
+            elif day == 'saturday':
+                schedule.every().saturday.at(time).do(self._emit_event, name)
+            elif day == 'sunday':
+                schedule.every().sunday.at(time).do(self._emit_event, name)
 
-    def add_schedule(self, schedule_name, start, end, lights):
-        """Add a schedule to the scheduler.
+        log.debug(f'registered one time event {name}, {", ".join(days)}'
+                  f' at {time}')
 
-        :param schedule_name: ``String`` name or "type" of schedule
-        :param start: ``String`` in HH:MM format
-        :param end: ``String`` in HH:MM format
-        :param lights: ``[String]`` list of lights
-        """
-        if schedule_name == 'bright':
-            schedule_function = self._schedule_bright
-        elif schedule_name == 'sunlight':
-            schedule_function = self._schedule_sunlight
+    def _schedule_spantime(self, name, start, end, days):
+        for day in days:
+            schedule.every(1).minute.do(
+                self._emit_event_span,
+                name, start, end,
+                ['monday', 'tuesday', 'wednesday',
+                 'thursday', 'friday', 'saturday', 'sunday'].index(day))
+
+        log.debug(f'registered span time event {name}, {start}-{end}, '
+                  f'for {", ".join(days)}')
+
+    def _emit_event(self, name):
+        log.debug(f'emitting event {name}')
+
+    def _emit_event_span(self, name, start, end, day):
+        if day != datetime.today().weekday():
+            return  # not today, do nothing
+        now = strftime("%H:%M", localtime())
+        if start < end and start <= now <= end \
+                or start > end and now > start > end \
+                or start > end and now < end < start:
+            self._emit_event(name)
+
+    def _sun_event(self):
+        now_utc = datetime.now(tz=timezone.utc)
+
+        longitude = self._config['location']['longitude']
+        latitude = self._config['location']['latitude']
+
+        sun_angle = get_altitude(longitude, latitude, now_utc)
+
+        if self._previous_sun_angle == 360:
+            self._previous_sun_angle = sun_angle  # store first time
         else:
-            log.warning('unknown schedule %s, for %s-%s with %s', schedule_name, start, end, lights)
-            return
-
-        log.debug('registered schedule %s, %s-%s', schedule_name, start, end)
-        schedule.every(1).minute.do(schedule_function, start, end, lights)
-
-    def schedule_event(self, event_name, day, time, lights=None, switches=None):
-        """Add scheduled events to scheduler.
-
-        :param event_name: ``String`` name or "type" of events
-        :param day: ``String`` weekday in English
-        :param time: ``String`` in HH:MM format
-        :param lights: ``[String]`` list of light names
-        :param switches: ``[String]`` list of on-off devices
-        """
-        if event_name == 'power_on':
-            event_function = self._event_power_on
-        elif event_name == 'power_off':
-            event_function = self._event_power_off
-        elif event_name == 'wakeup':
-            event_function = self._event_wakeup
-        else:
-            log.warning('unknown event %s, for %s %s with %s', event_name, day, time, lights)
-            return
-
-        if day == 'monday':
-            schedule.every().monday.at(time).do(event_function, lights + switches)
-        elif day == 'tuesday':
-            schedule.every().tuesday.at(time).do(event_function, lights + switches)
-        elif day == 'wednesday':
-            schedule.every().wednesday.at(time).do(event_function, lights + switches)
-        elif day == 'thursday':
-            schedule.every().thursday.at(time).do(event_function, lights + switches)
-        elif day == 'friday':
-            schedule.every().friday.at(time).do(event_function, lights + switches)
-        elif day == 'saturday':
-            schedule.every().saturday.at(time).do(event_function, lights + switches)
-        elif day == 'sunday':
-            schedule.every().sunday.at(time).do(event_function, lights + switches)
-
-        log.debug('registered event %s, %s at %s', event_name, day, time)
+            if self._previous_sun_angle < 0 and sun_angle >= 0:
+                self._emit_event('sun_rise')
+            elif self._previous_sun_angle > 0 and sun_angle <= 0:
+                self._emit_event('sun_set')
 
     def run(self):
         """Start the thread."""
+        log.debug('Scheduler started')
         while True:
             schedule.run_pending()
-            time.sleep(1)
-
-    def _schedule_bright(self, start, end, lights):
-        """Action, internal schedule fuction."""
-        now = strftime("%H:%M", localtime())
-        if start < end and start <= now <= end \
-                or start > end and now > start > end \
-                or start > end and now < end < start:
-            log.debug('scheduled bright on for %s', lights)
-            try:
-                self.schedule_bright(lights)
-            except Exception as err:
-                log.error('Unexpected bright schedule crash: %s', err, exc_info=True)
-
-    @staticmethod
-    def schedule_bright(lights):
-        """Abstract callback function, must be overridden."""
-        raise NotImplementedError('missing implementation schedule function: bright')
-
-    def _schedule_sunlight(self, start, end, lights):
-        """Action, internal schedule fuction."""
-        now = strftime("%H:%M", localtime())
-        if start < end and start <= now <= end \
-                or start > end and now > start > end \
-                or start > end and now < end < start:
-            log.debug('scheduled sunlight on for %s', lights)
-            try:
-                self.schedule_sunlight(lights)
-            except Exception as err:
-                log.error('Unexpected sunlight schedule crash: %s', err, exc_info=True)
-
-    @staticmethod
-    def schedule_sunlight(lights):
-        """Abstract callback function, must be overridden."""
-        raise NotImplementedError('missing implementation schedule function: sunlight')
-
-    def _event_power_on(self, devices):
-        log.debug('event power on for %s', devices)
-        try:
-            self.event_power_on(devices)
-        except Exception as err:
-            log.error('Unexpected power_on event crash: %s', err, exc_info=True)
-
-    def event_power_on(self, devices):
-        """Abstract callback function, must be overridden."""
-        raise NotImplementedError('missing implementation event function: power_on')
-
-    def _event_power_off(self, devices):
-        """Action, internal schedule fuction."""
-        log.debug('event power off for %s', devices)
-        try:
-            self.event_power_off(devices)
-        except Exception as err:
-            log.error('Unexpected power_on event crash: %s', err, exc_info=True)
-
-    def event_power_off(self, devices):
-        """Abstract callback function, must be overridden."""
-        raise NotImplementedError('missing implementation event function: power_off')
-
-    def _event_wakeup(self, lights):
-        """Action, internal schedule fuction."""
-        log.debug('event wake up for %s', lights)
-
-        try:
-            self.event_wakeup(lights)
-        except Exception as err:
-            log.error('Unexpected wakeup event crash: %s', err)
-
-    def event_wakeup(self, lights):
-        """Abstract callback function, must be overridden."""
-        raise NotImplementedError('missing implementation event function: wakeup')
+            sleep(1)

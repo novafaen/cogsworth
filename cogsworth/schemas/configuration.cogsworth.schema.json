@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/schema#",
+  "$schema": "https://json-schema.org/draft-06/schema#",
   "type": "object",
   "properties": {
     "smrt": {
@@ -30,25 +30,20 @@
       },
       "required": ["longitude", "latitude"]
     },
-    "lights": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "switches": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "schedule": {
+    "events": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "type": {
+          "name": {
             "type": "string"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+            }
           },
           "start": {
             "type": "string",
@@ -58,89 +53,30 @@
             "type": "string",
             "pattern": "^[0-9]{2}:[0-9]{2}$"
           },
-          "lights": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "time": {
+            "type": "string",
+            "pattern": "^[0-9]{2}:[0-9]{2}$"
           }
         },
-        "required": ["type", "start", "end", "lights"],
-        "additionalProperties": false
-      }
-    },
-    "events": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string"
-          },
-          "days": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "day": {
-                  "type": "string",
-                  "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-                },
-                "time": {
-                  "type": "string",
-                  "pattern": "^[0-9]{2}:[0-9]{2}$"
-                }
-              },
-              "required": ["day", "time"],
-              "additionalProperties": false
+        "required": ["name", "days"],
+        "oneOf": [
+          {
+            "required": ["start", "end"],
+            "not": {
+              "required": ["time"]
             }
           },
-          "lights": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "switches": {
-            "type": "array",
-            "items": {
-              "type": "string"
+          {
+            "required": ["time"],
+            "not": {
+              "required": ["start", "end"]
             }
           }
-        },
-        "required": ["type", "days", "lights", "switches"],
-        "additionalProperties": false
-      }
-    },
-    "actions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
-          },
-          "lights": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "switches": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": ["name", "type", "lights", "switches"],
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["smrt", "location", "lights", "switches", "schedule", "events", "actions"],
+  "required": ["smrt", "location", "events"],
   "additionalProperties": false
 }
